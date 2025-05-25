@@ -1,45 +1,43 @@
-from django.shortcuts import render
-from django.views.generic import ListView, CreateView, UpdateView, DeleteView
-from django.urls import reverse_lazy
-from .models import Product, Category
-from .forms import ProductForm
+from django.shortcuts import get_object_or_404
+from rest_framework import status, generics, viewsets
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from rest_framework.views import APIView
+from .models import Product
+from .serializers import ProductSerializer
 
-class ProductListView(ListView):
-    model = Product
-    template_name = 'store/product/list.html'
-    context_object_name = 'products'
+# 1. Function-based view for listing and creating products
+@api_view(['GET', 'POST'])
+def product_list_create(request):
+    if request.method == 'GET':
+        products = Product.objects.all()
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
     
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        category_slug = self.kwargs.get('category_slug')
-        if category_slug:
-            category = Category.objects.get(slug=category_slug)
-            queryset = queryset.filter(category=category)
-        return queryset.filter(stock__gt=0)
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['categories'] = Category.objects.all()
-        context['category'] = self.kwargs.get('category_slug')
-        return context
+    elif request.method == 'POST':
+        serializer = ProductSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ProductCreateView(CreateView):
-    model = Product
-    form_class = ProductForm
-    template_name = 'store/product/form.html'
-    success_url = reverse_lazy('store:product_list')
+# 2. Class-based view for updating a product
+class ProductUpdateView(APIView):
+    def put(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        serializer = ProductSerializer(product, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class ProductUpdateView(UpdateView):
-    model = Product
-    form_class = ProductForm
-    template_name = 'store/product/form.html'
-    success_url = reverse_lazy('store:product_list')
+# 3. Generic view for retrieve, update, delete
+class ProductRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    lookup_field = 'pk'
 
-class ProductDeleteView(DeleteView):
-    model = Product
-    template_name = 'store/product/confirm_delete.html'
-    success_url = reverse_lazy('store:product_list')
-
-def product_detail(request, id, slug):
-    product = Product.objects.get(id=id, slug=slug)
-    return render(request, 'store/product/detail.html', {'product': product})
+# 4. ViewSet for complete CRUD operations
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
